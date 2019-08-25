@@ -62,7 +62,7 @@ def CheckWhetherAddressIsValid(name_or_ea):
 def InterpretFile(filePathArg):
 	global ListPointersWithColors
 	IsReadingInstructions = False # Detects whether we're in reading instructions state
-	CurrentColor = 0x0c0387 # Default Color
+	CurrentColor = 0 # Default Color
 
 	with open(filePathArg) as fp:
 		line = fp.readline()
@@ -105,7 +105,15 @@ def InterpretFile(filePathArg):
 						ShowBranchTakenOrNot = False
 
 				elif "Color=" in line:
-					CurrentColor = int(line.strip().replace("Color=","") ,16)
+					CurrentColor = int(line.strip().replace("Color=",""))
+
+					# Convert it to somehow little endian which IDA understands :(
+					TempHex = str(hex(CurrentColor).replace("0x",""))
+					lengthOfTemp = 6 - len(TempHex)
+					TempHex = lengthOfTemp * "0" + TempHex
+					TempHex = TempHex[4:6] + TempHex[2:4] + TempHex[0:2]  
+					CurrentColor = int(TempHex , 16)
+
 					print("[*] Color : " + str(hex(CurrentColor)))
 		
 				
@@ -128,7 +136,7 @@ def InterpretFile(filePathArg):
 				else :
 					CurrentInstruction = line
 	
-				if ShowBranchTakenOrNot :
+				if ShowBranchTakenOrNot and InclueRegistersAsComment :
 					# Check if Branch is taken or not
 					if "[br=0]" in CurrentInstruction :
 						CurrentRegisters = "[Branch is not taken] "+ CurrentRegisters
@@ -144,15 +152,36 @@ def InterpretFile(filePathArg):
 	
 				print("[*] Setting color to : " + str(hex(ColorPointer)))
 				#============================================================================
-
 				# Detecting color combinations
-				ListPointersWithColors.append(tuple([ColorPointer,str(hex(CurrentColor))]))
+				UseNewColor = False
+				NewColor = " "
+
+				# PreviousColors = [item for item in ListPointersWithColors if item[0] == ColorPointer and item[1] == CurrentColor] 
+				PreviousColors = [item for item in ListPointersWithColors if item[0] == ColorPointer] 
+				for item in PreviousColors :
+					print("[*] Previsously this pointer has the following color : " + str(item) + ", let's combine it with another color.")
+					UseNewColor = True
+					# Check for combination of more than two colors
+					if NewColor == " " : 
+						NewColor = BlendColors(str(item[1]), str(hex(CurrentColor)).replace("0x","") ,0.5)
+					else :
+						NewColor = BlendColors(NewColor, str(hex(CurrentColor)).replace("0x","") ,0.5)
+					print("[*] Previous color : "+str(hex(CurrentColor))+", New color : 0x" + NewColor)
+
+				# Add it to list with  orginal color
+				ListPointersWithColors.append(tuple([ColorPointer,(CurrentColor)]))
+
+
+
 				#============================================================================
 
 				# Check Whether Address Is Valid
 				CheckWhetherAddressIsValid(ColorPointer)
+				if UseNewColor :
+					SetColor(ColorPointer, CIC_ITEM, int(NewColor,16))
+				else :
+					SetColor(ColorPointer, CIC_ITEM, CurrentColor)
 
-				SetColor(ColorPointer, CIC_ITEM, CurrentColor)
 				if InclueRegistersAsComment:
 					if "[gotonewline]" in CurrentRegisters :
 						MakeRptCmt(ColorPointer, CurrentRegisters.split("[gotonewline]")[0] + "\n" + CurrentRegisters.split("[gotonewline]")[1])
